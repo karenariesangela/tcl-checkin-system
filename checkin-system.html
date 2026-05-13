@@ -4,9 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>TCL实业营销战区签到看板</title>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+<script src="https://cdn.jsdcdn.com/s5/unpkg.com/qrcode@1.5.3/build/qrcode.min.js"></script>
 <style>
   *{box-sizing:border-box;margin:0;padding:0}
   body{font-family:'Microsoft YaHei',sans-serif;background:#f5f6fa;color:#222;font-size:14px}
@@ -69,14 +68,17 @@
   .stat-inline{display:flex;gap:12px;font-size:12px;align-items:center}
   .stat-inline .signed{color:#1a8a4a;font-weight:500}
   .stat-inline .unsigned{color:#c8102e;font-weight:500}
-  .loading-mask{position:fixed;inset:0;background:rgba(255,255,255,0.85);display:flex;align-items:center;justify-content:center;z-index:9999;font-size:16px;color:#c8102e}
+  .loading-mask{position:fixed;inset:0;background:rgba(255,255,255,0.9);display:flex;align-items:center;justify-content:center;z-index:9999;flex-direction:column;gap:12px}
+  .loading-mask span{font-size:16px;color:#c8102e}
   .sync-status{position:fixed;bottom:16px;right:16px;background:#1a8a4a;color:#fff;padding:8px 16px;border-radius:20px;font-size:12px;z-index:9998;display:none}
   @media(max-width:600px){.metrics-grid{grid-template-columns:1fr 1fr}.unit-grid{grid-template-columns:1fr}.nav{padding:0 8px}.page{padding:12px}}
 </style>
 </head>
 <body>
 
-<div class="loading-mask" id="loading-mask">正在连接数据库...</div>
+<div class="loading-mask" id="loading-mask">
+  <span>正在加载签到系统...</span>
+</div>
 <div class="sync-status" id="sync-status">数据已同步</div>
 
 <nav class="nav">
@@ -94,7 +96,7 @@
   <div class="metrics-grid" id="global-metrics"></div>
   <div class="card"><div class="card-title">大区签到统计</div><div id="l6-content"></div></div>
   <div class="card"><div class="card-title">战区签到统计</div><div class="section-tabs" id="l6-tabs"></div><div id="l7-content"></div></div>
-  <div class="card"><div class="card-title">签到趋势（今日）</div><div style="position:relative;height:220px"><canvas id="trendChart" role="img" aria-label="签到趋势图"></canvas></div></div>
+  <div class="card"><div class="card-title">签到趋势（今日）</div><div style="position:relative;height:220px"><canvas id="trendChart"></canvas></div></div>
 </div>
 
 <div class="page" id="page-checkin-mgmt">
@@ -103,7 +105,7 @@
       <span class="card-title" style="margin:0">签到记录</span>
       <div style="display:flex;gap:8px">
         <button class="btn btn-outline btn-sm" onclick="exportCSV()">导出 CSV</button>
-        <button class="btn btn-primary btn-sm" onclick="loadAllData();refreshDashboard()">刷新看板</button>
+        <button class="btn btn-primary btn-sm" onclick="loadAllData()">刷新</button>
       </div>
     </div>
     <div class="filter-bar">
@@ -123,9 +125,6 @@
   <div class="card">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
       <span class="card-title" style="margin:0">名单（<span id="person-count">0</span>人）</span>
-      <div style="display:flex;gap:8px">
-        <button class="btn btn-outline btn-sm" onclick="syncPersons()">同步名单</button>
-      </div>
     </div>
     <div class="filter-bar" style="margin-bottom:12px">
       <input id="search-person" placeholder="搜索工号/姓名/大区/战区" oninput="renderPersonTable()" style="width:240px">
@@ -141,7 +140,7 @@
 <div class="page" id="page-qr-page">
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;max-width:800px">
     <div class="card"><div class="card-title">签到二维码</div><div class="qr-box"><div class="qr-wrap" id="qr-container"></div><p style="font-size:12px;color:#888;text-align:center">扫码进入签到页<br>仅需输入工号即可完成签到</p><button class="btn btn-primary" onclick="downloadQR()">下载二维码</button></div></div>
-    <div class="card"><div class="card-title">签到链接</div><p style="font-size:13px;color:#666;margin-bottom:12px">将以下链接发给参与者，或使用左侧二维码扫码签到。</p><div style="background:#f5f6fa;border-radius:6px;padding:10px;font-size:12px;word-break:break-all;color:#444;margin-bottom:12px" id="checkin-url-display"></div><button class="btn btn-outline" onclick="copyCheckinUrl()">复制链接</button><hr style="margin:16px 0;border:none;border-top:0.5px solid #eee"><p style="font-size:13px;color:#666;margin-bottom:8px">本地测试用</p><button class="btn btn-primary" onclick="openCheckinPage()">打开签到页面</button></div>
+    <div class="card"><div class="card-title">签到链接</div><p style="font-size:13px;color:#666;margin-bottom:12px">将以下链接发给参与者，或使用左侧二维码扫码签到。</p><div style="background:#f5f6fa;border-radius:6px;padding:10px;font-size:12px;word-break:break-all;color:#444;margin-bottom:12px" id="checkin-url-display"></div><button class="btn btn-outline" onclick="copyCheckinUrl()">复制链接</button></div>
   </div>
 </div>
 
@@ -180,96 +179,257 @@
 </div>
 
 <script>
-// ========== Supabase 配置（请替换为您的实际值）==========
-const SUPABASE_URL = 'YOUR_SUPABASE_URL';
-const SUPABASE_ANON_KEY = 'YOUR_SUPABASE_ANON_KEY';
-// ========================================================
+// ========== GitHub Gist 配置 ==========
+const GIST_ID = '22ebcfc6e81da372357eb0270efe737c';
+const GITHUB_TOKEN = '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';
+// ====================================
 
-let supabaseClient = null;
-let persons = [];   // 人员列表
-let records = [];    // 签到记录
+const GIST_DATA_FILE = 'checkin-data.json';
+let persons = [];
+let records = [];
+let gistData = null;
 let activeL6Tab = '';
 let trendChartInst = null;
 let autoRefreshTimer = null;
 
-// 初始化 Supabase
-async function initSupabase() {
-  if (!SUPABASE_URL || SUPABASE_URL === 'YOUR_SUPABASE_URL') {
+// 加载 Gist 数据
+async function loadGistData() {
+  if (!GITHUB_TOKEN || GITHUB_TOKEN === 'YOUR_GITHUB_TOKEN') {
     document.getElementById('loading-mask').innerHTML = 
-      '<div style="text-align:center;color:#c8102e;padding:40px">' +
-      '<h3>⚠️ 请配置 Supabase</h3>' +
-      '<p style="margin-top:12px;font-size:14px;color:#666">请编辑 HTML 文件，填入您的 Supabase URL 和 Anon Key</p></div>';
-    return false;
+      '<div style="text-align:center;padding:40px;color:#c8102e">' +
+      '<h3>⚠️ 请配置 GitHub Token</h3>' +
+      '<p style="margin-top:12px;font-size:14px;color:#666">请编辑 HTML 文件，填入您的 GitHub Personal Access Token</p>' +
+      '<p style="margin-top:8px;font-size:12px;color:#999">Token 需要 gist 权限</p></div>';
+    return null;
   }
+  
   try {
-    supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-    // 测试连接
-    const { data, error } = await supabaseClient.from('persons').select('id').limit(1);
-    if (error) throw error;
+    const res = await fetch(`https://api.github.com/gists/${GIST_ID}`, {
+      headers: { 'Authorization': `token ${GITHUB_TOKEN}` }
+    });
+    if (!res.ok) {
+      if (res.status === 404) {
+        // Gist 不存在，创建新的
+        return await createGist();
+      }
+      throw new Error(`HTTP ${res.status}`);
+    }
+    const gist = await res.json();
+    if (gist.files[GIST_DATA_FILE]) {
+      return JSON.parse(gist.files[GIST_DATA_FILE].content);
+    } else {
+      // 文件不存在，创建初始数据
+      return await createInitialData();
+    }
+  } catch(e) {
+    console.error('加载数据失败:', e);
+    document.getElementById('loading-mask').innerHTML = 
+      '<div style="text-align:center;padding:40px;color:#c8102e">' +
+      '<h3>⚠️ 数据加载失败</h3>' +
+      '<p style="margin-top:12px;font-size:13px;color:#666">'+e.message+'</p></div>';
+    return null;
+  }
+}
+
+// 创建新的 Gist
+async function createGist() {
+  const initialData = {
+    persons: getPresetPersons(),
+    records: [],
+    lastUpdated: new Date().toISOString()
+  };
+  
+  const res = await fetch('https://api.github.com/gists', {
+    method: 'POST',
+    headers: {
+      'Authorization': `token ${GITHUB_TOKEN}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      description: 'TCL营销战区签到数据',
+      public: false,
+      files: {
+        [GIST_DATA_FILE]: { content: JSON.stringify(initialData, null, 2) }
+      }
+    })
+  });
+  
+  if (!res.ok) throw new Error(`创建 Gist 失败: HTTP ${res.status}`);
+  const gist = await res.json();
+  console.log('已创建新 Gist:', gist.id);
+  return initialData;
+}
+
+// 创建初始数据
+async function createInitialData() {
+  const initialData = {
+    persons: getPresetPersons(),
+    records: [],
+    lastUpdated: new Date().toISOString()
+  };
+  await saveGistData(initialData);
+  return initialData;
+}
+
+// 保存数据到 Gist
+async function saveGistData(data) {
+  data.lastUpdated = new Date().toISOString();
+  
+  try {
+    // 先获取当前 Gist
+    const res = await fetch(`https://api.github.com/gists/${GIST_ID}`, {
+      headers: { 'Authorization': `token ${GITHUB_TOKEN}` }
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const gist = await res.json();
+    
+    // 更新 Gist
+    const updateRes = await fetch(`https://api.github.com/gists/${GIST_ID}`, {
+      method: 'PATCH',
+      headers: {
+        'Authorization': `token ${GITHUB_TOKEN}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        files: {
+          [GIST_DATA_FILE]: { content: JSON.stringify(data, null, 2) }
+        }
+      })
+    });
+    
+    if (!updateRes.ok) throw new Error(`保存失败: HTTP ${updateRes.status}`);
+    showSyncStatus('数据已同步', '#1a8a4a');
     return true;
   } catch(e) {
-    document.getElementById('loading-mask').innerHTML = 
-      '<div style="text-align:center;color:#c8102e;padding:40px">' +
-      '<h3>⚠️ 数据库连接失败</h3>' +
-      '<p style="margin-top:12px;font-size:13px;color:#666">' + e.message + '</p></div>';
+    console.error('保存数据失败:', e);
+    showSyncStatus('同步失败', '#c8102e');
     return false;
   }
-}
-
-// 加载人员数据
-async function loadPersons() {
-  if (!supabaseClient) return;
-  const { data, error } = await supabaseClient.from('persons').select('*').order('no');
-  if (error) { console.error('加载人员失败:', error); return; }
-  persons = data || [];
-  document.getElementById('person-count').textContent = persons.length;
-}
-
-// 加载签到记录
-async function loadRecords() {
-  if (!supabaseClient) return;
-  const { data, error } = await supabaseClient.from('records').select('*');
-  if (error) { console.error('加载签到记录失败:', error); return; }
-  records = data || [];
 }
 
 // 加载所有数据
 async function loadAllData() {
-  showSyncStatus('正在同步数据...', '#d97706');
-  await Promise.all([loadPersons(), loadRecords()]);
-  populateFilterSelects();
-  populatePersonFilters();
-  showSyncStatus('数据已同步', '#1a8a4a');
+  showSyncStatus('正在同步...', '#d97706');
+  gistData = await loadGistData();
+  if (gistData) {
+    persons = gistData.persons || [];
+    records = gistData.records || [];
+    populateFilterSelects();
+    populatePersonFilters();
+    document.getElementById('person-count').textContent = persons.length;
+    showSyncStatus('数据已同步', '#1a8a4a');
+  }
 }
 
-// 签到
+// 预置人员名单
+function getPresetPersons() {
+  return [
+    {id:1,no:"00002796",name:"何彦",l6:"西北大区",l7:"兰州战区"},
+    {id:2,no:"00014376",name:"王新端",l6:"西北大区",l7:"西北大区"},
+    {id:3,no:"00015447",name:"王兆阳",l6:"华北大区",l7:"石家庄战区"},
+    {id:4,no:"00015822",name:"刘新政",l6:"华南大区",l7:"长沙战区"},
+    {id:5,no:"00015939",name:"高海波",l6:"西南大区",l7:"重庆战区"},
+    {id:6,no:"00015940",name:"袁科",l6:"西南大区",l7:"重庆战区"},
+    {id:7,no:"00015953",name:"刘川",l6:"西南大区",l7:"成都战区"},
+    {id:8,no:"00016056",name:"夏雷",l6:"东北大区",l7:"沈阳战区"},
+    {id:9,no:"00016126",name:"鲜岗",l6:"西南大区",l7:"成都战区"},
+    {id:10,no:"00016162",name:"冯启明",l6:"华南大区",l7:"南宁战区"},
+    {id:11,no:"00016260",name:"刘吕鑫",l6:"华东大区",l7:"合肥战区"},
+    {id:12,no:"00016410",name:"杨欢欢",l6:"西南大区",l7:"西南大区"},
+    {id:13,no:"00016751",name:"冯宇",l6:"西南大区",l7:"贵阳战区"},
+    {id:14,no:"00017117",name:"蔡后运",l6:"华北大区",l7:"济南战区"},
+    {id:15,no:"00017132",name:"杨王正帆",l6:"西南大区",l7:"重庆战区"},
+    {id:16,no:"00017421",name:"李海涛",l6:"西北大区",l7:"西安战区"},
+    {id:17,no:"00017646",name:"杨成",l6:"华东大区",l7:"南京战区"},
+    {id:18,no:"00017658",name:"王烽",l6:"华东大区",l7:"南京战区"},
+    {id:19,no:"00017964",name:"张涛涛",l6:"华北大区",l7:"石家庄战区"},
+    {id:20,no:"00018213",name:"李斌",l6:"西北大区",l7:"太原战区"},
+    {id:21,no:"00018812",name:"宋宝航",l6:"东北大区",l7:"沈阳战区"},
+    {id:22,no:"00018815",name:"秦玉龙",l6:"东北大区",l7:"沈阳战区"},
+    {id:23,no:"00018819",name:"李岩鹰",l6:"东北大区",l7:"沈阳战区"},
+    {id:24,no:"00018822",name:"王玲阳",l6:"东北大区",l7:"沈阳战区"},
+    {id:25,no:"00018825",name:"马丽",l6:"东北大区",l7:"沈阳战区"},
+    {id:26,no:"00018836",name:"曹海亮",l6:"华东大区",l7:"南京战区"},
+    {id:27,no:"00018845",name:"林小苏",l6:"华东大区",l7:"南京战区"},
+    {id:28,no:"00018874",name:"王文虎",l6:"华北大区",l7:"青岛战区"},
+    {id:29,no:"00018893",name:"马松",l6:"华北大区",l7:"天津战区"},
+    {id:30,no:"00018933",name:"刘义成",l6:"华北大区",l7:"济南战区"},
+    {id:31,no:"00018938",name:"王鹏飞",l6:"华北大区",l7:"郑州战区"},
+    {id:32,no:"00018941",name:"张涛",l6:"华北大区",l7:"郑州战区"},
+    {id:33,no:"00018959",name:"陈跃进",l6:"华南大区",l7:"福州战区"},
+    {id:34,no:"00018971",name:"李学志",l6:"华东大区",l7:"上海战区"},
+    {id:35,no:"00018989",name:"黄向杰",l6:"华东大区",l7:"合肥战区"},
+    {id:36,no:"00019000",name:"羊孟文",l6:"华南大区",l7:"广州战区"},
+    {id:37,no:"00019014",name:"孙凤鸣",l6:"华北大区",l7:"华北大区"},
+    {id:38,no:"00019018",name:"夏等海",l6:"华北大区",l7:"济南战区"},
+    {id:39,no:"00019022",name:"衣艳松",l6:"华北大区",l7:"青岛战区"},
+    {id:40,no:"00019023",name:"李永波",l6:"华北大区",l7:"济南战区"},
+    {id:41,no:"00019024",name:"何山",l6:"华北大区",l7:"济南战区"},
+    {id:42,no:"00019030",name:"刘伟伟",l6:"华北大区",l7:"济南战区"},
+    {id:43,no:"00019037",name:"张波",l6:"西南大区",l7:"成都战区"},
+    {id:44,no:"00019042",name:"刘佳",l6:"西南大区",l7:"成都战区"},
+    {id:45,no:"00019080",name:"安军彦",l6:"华北大区",l7:"石家庄战区"},
+    {id:46,no:"00020323",name:"丁红霞",l6:"华南大区",l7:"长沙战区"},
+    {id:47,no:"00020423",name:"周学刚",l6:"西南大区",l7:"成都战区"},
+    {id:48,no:"00020475",name:"肖辉",l6:"西南大区",l7:"成都战区"},
+    {id:49,no:"00020613",name:"杨小兰",l6:"华南大区",l7:"福州战区"},
+    {id:50,no:"00020855",name:"梁家乐",l6:"华南大区",l7:"广州战区"},
+    {id:51,no:"00020882",name:"李钟",l6:"西北大区",l7:"西安战区"},
+    {id:52,no:"00020992",name:"敖然",l6:"东北大区",l7:"哈尔滨战区"},
+    {id:53,no:"00020993",name:"张化鹏",l6:"东北大区",l7:"长春战区"},
+    {id:54,no:"00020995",name:"战俭",l6:"东北大区",l7:"哈尔滨战区"},
+    {id:55,no:"00021010",name:"李桂荣",l6:"东北大区",l7:"东北大区"},
+    {id:56,no:"00021113",name:"黄丽云",l6:"华东大区",l7:"杭州战区"},
+    {id:57,no:"00021300",name:"孙洁",l6:"华东大区",l7:"华东大区"},
+    {id:58,no:"00021444",name:"高岩",l6:"华北大区",l7:"华北大区"},
+    {id:59,no:"00021473",name:"刘玉霞",l6:"华北大区",l7:"济南战区"},
+    {id:60,no:"00021631",name:"鲁霞",l6:"华北大区",l7:"青岛战区"}
+  ];
+}
+
+// 签到操作
 async function doCheckin(personId) {
-  if (!supabaseClient) return false;
-  const { data, error } = await supabaseClient
-    .from('records')
-    .insert([{ person_id: personId, checkin_time: new Date().toISOString() }])
-    .select();
-  if (error) {
-    if (error.code === '23505') return 'dup'; // 唯一约束冲突 = 已签到
-    console.error('签到失败:', error);
+  // 检查是否已签到
+  if (records.some(r => r.person_id === personId)) {
+    return 'dup';
+  }
+  
+  const newRecord = {
+    id: Date.now(),
+    person_id: personId,
+    checkin_time: new Date().toISOString()
+  };
+  
+  records.push(newRecord);
+  gistData.records = records;
+  
+  const success = await saveGistData(gistData);
+  if (!success) {
+    // 回滚
+    records = records.filter(r => r.id !== newRecord.id);
     return false;
   }
-  await loadRecords(); // 刷新本地记录
-  showSyncStatus('签到成功，数据已同步', '#1a8a4a');
   return true;
 }
 
 // 撤销签到
 async function doCancelCheckin(recordId) {
-  if (!supabaseClient) return false;
-  const { error } = await supabaseClient.from('records').delete().eq('id', recordId);
-  if (error) { console.error('撤销失败:', error); return false; }
-  await loadRecords();
-  showSyncStatus('已撤销签到', '#d97706');
+  const record = records.find(r => r.id === recordId);
+  if (!record) return false;
+  
+  const idx = records.indexOf(record);
+  records.splice(idx, 1);
+  gistData.records = records;
+  
+  const success = await saveGistData(gistData);
+  if (!success) {
+    records.splice(idx, 0, record);
+    return false;
+  }
   return true;
 }
 
-// 同步状态提示
+// 显示同步状态
 function showSyncStatus(msg, color) {
   const el = document.getElementById('sync-status');
   el.textContent = msg;
@@ -278,10 +438,12 @@ function showSyncStatus(msg, color) {
   setTimeout(() => { el.style.display = 'none'; }, 2500);
 }
 
-// ========== 页面逻辑（在 loadAllData 完成后调用）==========
-function startApp() {
+// ========== 页面初始化 ==========
+document.addEventListener('DOMContentLoaded', async () => {
+  await loadAllData();
   document.getElementById('loading-mask').style.display = 'none';
   
+  // 导航切换
   document.querySelectorAll('.nav-tab').forEach(tab => {
     tab.addEventListener('click', () => {
       document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
@@ -294,17 +456,15 @@ function startApp() {
       if (tab.dataset.page === 'qr-page') renderQR();
     });
   });
-
+  
   checkCheckinMode();
-  loadAllData().then(() => {
-    if (document.getElementById('checkin-landing').style.display !== 'block') {
-      refreshDashboard();
-      startAutoRefresh();
-    }
-  });
-}
+  if (document.getElementById('checkin-landing').style.display !== 'block') {
+    refreshDashboard();
+    startAutoRefresh();
+  }
+});
 
-// 自动刷新（每30秒）
+// 自动刷新
 function startAutoRefresh() {
   if (autoRefreshTimer) clearInterval(autoRefreshTimer);
   autoRefreshTimer = setInterval(() => {
@@ -357,7 +517,7 @@ function renderL7Content(signedIds) {
   const l6List = [...new Set(persons.map(p=>p.l6).filter(Boolean))].sort();
   if (!activeL6Tab && l6List.length) activeL6Tab = l6List[0];
   let tabsHtml = '';
-  l6List.forEach(l6 => { tabsHtml += '<span class="section-tab ' + (activeL6Tab===l6?'active':'') + '" onclick="setL6Tab(this)" data-l6="' + escHtml(l6) + '">' + escHtml(l6) + '</span>'; });
+  l6List.forEach(l6 => { tabsHtml += '<span class="section-tab ' + (activeL6Tab===l6?'active':'') + '" onclick="setL6Tab(this)" data-l6="' + escAttr(l6) + '">' + escHtml(l6) + '</span>'; });
   document.getElementById('l6-tabs').innerHTML = tabsHtml;
 
   const unitMap = {};
@@ -408,14 +568,7 @@ function renderTrend() {
       labels:Array.from({length:24},(_,i)=>i+':00'),
       datasets:[{label:'累计签到',data:cumulative,borderColor:'#c8102e',backgroundColor:'rgba(200,16,46,0.07)',borderWidth:2,pointRadius:2,fill:true,tension:0.3}]
     },
-    options:{
-      responsive:true,maintainAspectRatio:false,
-      plugins:{legend:{display:false}},
-      scales:{
-        x:{ticks:{maxTicksLimit:12,font:{size:11}}},
-        y:{beginAtZero:true,ticks:{stepSize:1,font:{size:11}}}
-      }
-    }
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{ticks:{maxTicksLimit:12}},y:{beginAtZero:true,ticks:{stepSize:1}}}}
   });
 }
 
@@ -457,9 +610,9 @@ function renderCheckinTable() {
   let html = '';
   rows.forEach(p => {
     const rec = signedMap[p.id]; const signed = !!rec;
-    const cancelBtn = signed ? '<button class="btn btn-outline btn-sm" onclick="cancelCheckin('+rec.id+','+p.id+')">撤销</button>' : '';
+    const cancelBtn = signed ? '<button class="btn btn-outline btn-sm" onclick="cancelCheckin('+rec.id+')">撤销</button>' : '';
     const signBtn = !signed ? '<button class="btn btn-success btn-sm" onclick="manualCheckin('+p.id+')">手动签到</button>' : '';
-    html += '<tr><td style="color:#888">'+(p.no||'')+'</td><td>'+escHtml(p.name)+'</td><td>'+(p.l6||'')+'</td><td>'+(p.l7||'')+'</td>' +
+    html += '<tr><td style="color:#888">'+(p.no||'')+'</td><td>'+escHtml(p.name)+'</td><td>'+escHtml(p.l6||'')+'</td><td>'+escHtml(p.l7||'')+'</td>' +
       '<td><span class="badge '+(signed?'badge-signed':'badge-not')+'">'+(signed?'已签到':'未签到')+'</span></td>' +
       '<td style="font-size:12px;color:#888;white-space:nowrap">'+(rec?fmtTime(rec.checkin_time):'—')+'</td>' +
       '<td>'+cancelBtn+signBtn+'</td></tr>';
@@ -474,7 +627,7 @@ async function manualCheckin(personId) {
   else { alert('签到失败'); }
 }
 
-async function cancelCheckin(recordId, personId) {
+async function cancelCheckin(recordId) {
   if (!confirm('确定撤销该签到记录？')) return;
   const result = await doCancelCheckin(recordId);
   if (result) { renderCheckinTable(); refreshDashboard(); }
@@ -484,7 +637,7 @@ async function cancelCheckin(recordId, personId) {
 function exportCSV() {
   const signedMap = {};
   records.forEach(r=>{ signedMap[r.person_id]=r; });
-  const header = '工号,姓名,大区(六级单位),战区(七级单位),签到状态,签到时间';
+  const header = '工号,姓名,大区,战区,签到状态,签到时间';
   const body = persons.map(p => {
     const rec = signedMap[p.id];
     return [p.no,p.name,p.l6,p.l7,rec?'已签到':'未签到',rec?fmtTime(rec.checkin_time):''].map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(',');
@@ -512,26 +665,18 @@ function renderPersonTable() {
     if (l6f && p.l6 !== l6f) return false;
     return !q || (p.no||'').toLowerCase().includes(q) || p.name.toLowerCase().includes(q) || (p.l6||'').toLowerCase().includes(q) || (p.l7||'').toLowerCase().includes(q);
   });
-  document.getElementById('person-count').textContent = persons.length;
   let html = '';
   filtered.forEach(p => {
-    html += '<tr><td style="color:#888">'+(p.no||'')+'</td><td>'+escHtml(p.name)+'</td><td>'+(p.l6||'')+'</td><td>'+(p.l7||'')+'</td>' +
+    html += '<tr><td style="color:#888">'+(p.no||'')+'</td><td>'+escHtml(p.name)+'</td><td>'+escHtml(p.l6||'')+'</td><td>'+escHtml(p.l7||'')+'</td>' +
       '<td><span class="badge '+(signedIds.has(p.id)?'badge-signed':'badge-not')+'">'+(signedIds.has(p.id)?'已签':'未签')+'</span></td></tr>';
   });
   document.getElementById('person-tbody').innerHTML = html;
 }
 
-async function syncPersons() {
-  await loadAllData();
-  renderPersonTable();
-  refreshDashboard();
-}
-
-// ========== 签到页（独立页面）==========
+// ========== 签到页 ==========
 function checkCheckinMode() {
   if (new URLSearchParams(location.search).get('checkin')==='1') {
     document.getElementById('checkin-landing').style.display='block';
-    document.getElementById('app-shell') && (document.getElementById('app-shell').style.display='none');
   }
 }
 
@@ -554,18 +699,21 @@ async function submitCheckin() {
   if (!no) return alert('请输入工号');
   const p = persons.find(p=>p.no===no);
   if (!p) return alert('未找到该工号，请确认工号是否正确');
+  
   const existing = records.find(r=>r.person_id===p.id);
   if (existing) {
     showCard('ci-dup-card');
     document.getElementById('ci-dup-msg').textContent = p.name + '，您的签到已于 ' + fmtTime(existing.checkin_time) + ' 完成，无需重复签到';
     return;
   }
+  
   const result = await doCheckin(p.id);
   if (result === true) {
     showCard('ci-success-card');
     const rows = [['姓名',p.name],['工号',p.no],['大区',p.l6],['战区',p.l7]];
     document.getElementById('ci-success-detail').innerHTML = rows.map(([k,v])=>'<div class="info-row"><span class="info-label">'+k+'</span><span class="info-val">'+(v||'—')+'</span></div>').join('');
     document.getElementById('ci-success-time').textContent = '签到时间：'+fmtTime(new Date().toISOString());
+    refreshDashboard && refreshDashboard();
   } else if (result === 'dup') {
     showCard('ci-dup-card');
     document.getElementById('ci-dup-msg').textContent = p.name + '，您已完成签到，无需重复操作';
@@ -583,11 +731,14 @@ function renderQR() {
   const url = getCheckinUrl();
   document.getElementById('checkin-url-display').textContent = url;
   const container = document.getElementById('qr-container'); container.innerHTML='';
-  QRCode.toCanvas(document.createElement('canvas'), url, {width:200,margin:1}, (err,canvas)=>{ if (!err) container.appendChild(canvas); });
+  if (typeof QRCode !== 'undefined') {
+    QRCode.toCanvas(document.createElement('canvas'), url, {width:200,margin:1}, (err,canvas)=>{ if (!err) container.appendChild(canvas); });
+  } else {
+    container.innerHTML = '<p style="color:#c8102e">QR库加载失败</p>';
+  }
 }
 function downloadQR() { const canvas = document.querySelector('#qr-container canvas'); if (!canvas) return; const a=document.createElement('a'); a.href=canvas.toDataURL('image/png'); a.download='签到二维码.png'; a.click(); }
 function copyCheckinUrl() { navigator.clipboard.writeText(getCheckinUrl()).then(()=>alert('已复制到剪贴板')); }
-function openCheckinPage() { location.href=getCheckinUrl(); }
 
 // ========== 工具函数 ==========
 function fmtTime(ts) {
@@ -598,12 +749,6 @@ function fmtTime(ts) {
 }
 function escHtml(s) { if (!s) return ''; return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 function escAttr(s) { if (!s) return ''; return String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/'/g,'&#39;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
-
-// ========== 启动 ==========
-document.addEventListener('DOMContentLoaded', async () => {
-  const ok = await initSupabase();
-  if (ok) startApp();
-});
 </script>
 </body>
 </html>
